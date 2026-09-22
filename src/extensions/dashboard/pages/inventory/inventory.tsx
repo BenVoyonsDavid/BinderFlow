@@ -1,7 +1,8 @@
-import { useMemo, useState, type FC, type FormEvent } from 'react';
+import { useEffect, useMemo, useState, type FC, type FormEvent } from 'react';
 import { Page, WixDesignSystemProvider } from '@wix/design-system';
 import '@wix/design-system/styles.global.css';
 import { demoCatalog } from '../../../../core/catalog';
+import { items } from '@wix/data';
 
 type InventoryRow = {
   id: string;
@@ -76,6 +77,8 @@ const initialForm: AddCardForm = {
   slot: '',
 };
 
+const INVENTORY_COLLECTION_ID = '@pilotedavid1/binderflowapp/inventoryitems';
+
 const currency = new Intl.NumberFormat('en-CA', {
   style: 'currency',
   currency: 'CAD',
@@ -83,9 +86,69 @@ const currency = new Intl.NumberFormat('en-CA', {
 
 const InventoryPage: FC = () => {
   const [query, setQuery] = useState('');
-  const [inventory, setInventory] = useState<InventoryRow[]>(initialInventory);
+  const [inventory, setInventory] = useState<InventoryRow[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<AddCardForm>(initialForm);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadInventory = async () => {
+      try {
+        setIsLoading(true);
+        setDataError(null);
+
+        const result = await items.query(INVENTORY_COLLECTION_ID).limit(1000).find();
+
+        if (cancelled) {
+          return;
+        }
+
+        const rows: InventoryRow[] = result.items.map((item) => ({
+          id: String(item._id ?? crypto.randomUUID()),
+          name: String(item.name ?? ''),
+          game: String(item.game ?? ''),
+          set: String(item.setName ?? ''),
+          number: String(item.cardNumber ?? ''),
+          variant: String(item.variant ?? ''),
+          condition: (String(item.condition ?? 'NM') as InventoryRow['condition']),
+          quantity: Number(item.quantity ?? 0),
+          acquisitionCost: Number(item.acquisitionCost ?? 0),
+          price: Number(item.salePrice ?? 0),
+          binder: [
+            item.binder ? String(item.binder) : 'Not assigned',
+            item.page ? `Page ${String(item.page)}` : '',
+            item.slot ? String(item.slot) : '',
+          ]
+            .filter(Boolean)
+            .join(' · '),
+        }));
+
+        setInventory(rows);
+      } catch (error) {
+        if (!cancelled) {
+          console.error('Failed to load BinderFlow inventory', error);
+          setDataError(
+            'BinderFlow could not load the persistent inventory. Make sure the app is installed on the development site and the data collection is available.',
+          );
+          setInventory(initialInventory);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    void loadInventory();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const selectedGame = demoCatalog.find((game) => game.name === form.game);
   const availableSets = selectedGame?.sets ?? [];
@@ -127,8 +190,15 @@ const InventoryPage: FC = () => {
     0,
   );
 
-  const submitCard = (event: FormEvent) => {
+  const submitCard = async (event: FormEvent) => {
     event.preventDefault();
+
+    if (isSaving) {
+      return;
+    }
+
+    setIsSaving(true);
+    setDataError(null);
 
     const binderParts = [
       form.binder.trim() || 'Not assigned',
@@ -136,25 +206,52 @@ const InventoryPage: FC = () => {
       form.slot.trim() ? form.slot.trim() : '',
     ].filter(Boolean);
 
-    setInventory((items) => [
-      {
-        id: crypto.randomUUID(),
+    try {
+      const inserted = await items.insert(INVENTORY_COLLECTION_ID, {
         name: form.name.trim() || 'Unnamed card',
         game: form.game,
-        set: form.set.trim() || 'Unassigned',
-        number: form.number.trim() || '—',
+        setName: form.set.trim() || 'Unassigned',
+        cardNumber: form.number.trim() || '—',
         variant: form.variant,
         condition: form.condition,
         quantity: Math.max(1, form.quantity),
         acquisitionCost: Math.max(0, form.acquisitionCost),
-        price: Math.max(0, form.price),
-        binder: binderParts.join(' · '),
-      },
-      ...items,
-    ]);
+        salePrice: Math.max(0, form.price),
+        currency: 'CAD',
+        binder: form.binder.trim() || '',
+        page: form.page.trim() || '',
+        slot: form.slot.trim() || '',
+        wixProductId: '',
+        status: 'available',
+      });
 
-    setForm(initialForm);
-    setIsAddOpen(false);
+      setInventory((currentItems) => [
+        {
+          id: String(inserted._id ?? crypto.randomUUID()),
+          name: String(inserted.name ?? form.name),
+          game: String(inserted.game ?? form.game),
+          set: String(inserted.setName ?? form.set),
+          number: String(inserted.cardNumber ?? form.number),
+          variant: String(inserted.variant ?? form.variant),
+          condition: String(inserted.condition ?? form.condition) as InventoryRow['condition'],
+          quantity: Number(inserted.quantity ?? form.quantity),
+          acquisitionCost: Number(inserted.acquisitionCost ?? form.acquisitionCost),
+          price: Number(inserted.salePrice ?? form.price),
+          binder: binderParts.join(' · '),
+        },
+        ...currentItems,
+      ]);
+
+      setForm(initialForm);
+      setIsAddOpen(false);
+    } catch (error) {
+      console.error('Failed to save BinderFlow inventory item', error);
+      setDataError(
+        'The card could not be saved to BinderFlow. Check the development site installation and collection permissions.',
+      );
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -167,6 +264,21 @@ const InventoryPage: FC = () => {
 
         <Page.Content>
           <div style={{ display: 'grid', gap: 24, paddingBottom: 32 }}>
+            {dataError && (
+              <div
+                role="alert"
+                style={{
+                  padding: '12px 16px',
+                  border: '1px solid #f2c2c2',
+                  borderRadius: 8,
+                  background: '#fff5f5',
+                  color: '#7f1d1d',
+                }}
+              >
+                {dataError}
+              </div>
+            )}
+
             <section
               style={{
                 display: 'grid',
@@ -437,8 +549,16 @@ const InventoryPage: FC = () => {
                   >
                     Cancel
                   </button>
-                  <button type="submit" style={primaryButtonStyle}>
-                    Add to inventory
+                  <button
+                    type="submit"
+                    disabled={isSaving}
+                    style={{
+                      ...primaryButtonStyle,
+                      opacity: isSaving ? 0.65 : 1,
+                      cursor: isSaving ? 'not-allowed' : 'pointer',
+                    }}
+                  >
+                    {isSaving ? 'Saving…' : 'Add to inventory'}
                   </button>
                 </div>
               </form>
@@ -514,7 +634,22 @@ const InventoryPage: FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredInventory.map((item) => (
+                    {isLoading && (
+                      <tr>
+                        <td
+                          colSpan={9}
+                          style={{
+                            padding: 40,
+                            textAlign: 'center',
+                            color: '#6b7280',
+                          }}
+                        >
+                          Loading BinderFlow inventory…
+                        </td>
+                      </tr>
+                    )}
+
+                    {!isLoading && filteredInventory.map((item) => (
                       <tr key={item.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                         <Cell>
                           <strong>{item.name}</strong>
@@ -542,7 +677,7 @@ const InventoryPage: FC = () => {
                       </tr>
                     ))}
 
-                    {filteredInventory.length === 0 && (
+                    {!isLoading && filteredInventory.length === 0 && (
                       <tr>
                         <td
                           colSpan={9}
