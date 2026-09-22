@@ -1,8 +1,7 @@
 {
-  "projectType": "Site",
-  "appId": "157dafe1-66d3-4468-87d1-a3a95d8a6b36",
-  "siteId": "8a4a75ee-da2f-4486-b8b8-de3231e90aac",
-  "site": {
-    "outputDirectory": "./dist"
-  }
+  "appId": "f9641772-d6de-4965-8e4f-13364c9ae225",
+  "projectId": "binderflow-wix-temp",
+  "namespace": "@pilotedavid1/binderflowapp",
+  "codeIdentifier": "binderFlow",
+  "projectType": "App"
 }
