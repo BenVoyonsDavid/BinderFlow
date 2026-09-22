@@ -1,6 +1,7 @@
 import { useMemo, useState, type FC, type FormEvent } from 'react';
 import { Page, WixDesignSystemProvider } from '@wix/design-system';
 import '@wix/design-system/styles.global.css';
+import { demoCatalog } from '../../../../core/catalog';
 
 type InventoryRow = {
   id: string;
@@ -85,6 +86,13 @@ const InventoryPage: FC = () => {
   const [inventory, setInventory] = useState<InventoryRow[]>(initialInventory);
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [form, setForm] = useState<AddCardForm>(initialForm);
+
+  const selectedGame = demoCatalog.find((game) => game.name === form.game);
+  const availableSets = selectedGame?.sets ?? [];
+  const selectedSet = availableSets.find((set) => set.name === form.set);
+  const availableCards = selectedSet?.cards ?? [];
+  const selectedCard = availableCards.find((card) => card.name === form.name);
+  const availableVariants = selectedCard?.variants ?? [];
 
   const filteredInventory = useMemo(() => {
     const search = query.trim().toLowerCase();
@@ -218,49 +226,78 @@ const InventoryPage: FC = () => {
                     <select
                       value={form.game}
                       onChange={(event) =>
-                        setForm((value) => ({ ...value, game: event.target.value }))
+                        setForm((value) => ({
+                          ...value,
+                          game: event.target.value,
+                          set: '',
+                          name: '',
+                          number: '',
+                          variant: 'Normal',
+                        }))
                       }
                       style={controlStyle}
                     >
-                      <option>Riftbound</option>
-                      <option>Magic</option>
-                      <option>Disney Lorcana</option>
-                      <option>Pokémon</option>
+                      {demoCatalog.map((game) => (
+                        <option key={game.id} value={game.name}>
+                          {game.name}
+                        </option>
+                      ))}
                     </select>
                   </Field>
 
                   <Field label="Set">
-                    <input
+                    <select
                       value={form.set}
                       onChange={(event) =>
-                        setForm((value) => ({ ...value, set: event.target.value }))
+                        setForm((value) => ({
+                          ...value,
+                          set: event.target.value,
+                          name: '',
+                          number: '',
+                          variant: 'Normal',
+                        }))
                       }
-                      placeholder="Vendetta"
                       style={controlStyle}
-                    />
+                    >
+                      <option value="">Select a set</option>
+                      {availableSets.map((set) => (
+                        <option key={set.id} value={set.name}>
+                          {set.name}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
 
                   <Field label="Card">
-                    <input
+                    <select
                       value={form.name}
-                      onChange={(event) =>
-                        setForm((value) => ({ ...value, name: event.target.value }))
-                      }
-                      placeholder="Card name"
+                      onChange={(event) => {
+                        const card = availableCards.find(
+                          (item) => item.name === event.target.value,
+                        );
+
+                        setForm((value) => ({
+                          ...value,
+                          name: card?.name ?? '',
+                          number: card?.number ?? '',
+                          variant: card?.variants[0] ?? 'Normal',
+                        }));
+                      }}
+                      disabled={!form.set}
                       required
                       style={controlStyle}
-                    />
+                    >
+                      <option value="">Select a card</option>
+                      {availableCards.map((card) => (
+                        <option key={card.id} value={card.name}>
+                          #{card.number} — {card.name}
+                        </option>
+                      ))}
+                    </select>
                   </Field>
 
                   <Field label="Card number">
-                    <input
-                      value={form.number}
-                      onChange={(event) =>
-                        setForm((value) => ({ ...value, number: event.target.value }))
-                      }
-                      placeholder="001"
-                      style={controlStyle}
-                    />
+                    <input value={form.number} readOnly style={readOnlyControlStyle} />
                   </Field>
 
                   <Field label="Variant">
@@ -269,13 +306,18 @@ const InventoryPage: FC = () => {
                       onChange={(event) =>
                         setForm((value) => ({ ...value, variant: event.target.value }))
                       }
+                      disabled={!selectedCard}
                       style={controlStyle}
                     >
-                      <option>Normal</option>
-                      <option>Foil</option>
-                      <option>Alternate Art</option>
-                      <option>Foil Alternate Art</option>
-                      <option>Promo</option>
+                      {availableVariants.length === 0 ? (
+                        <option>Normal</option>
+                      ) : (
+                        availableVariants.map((variant) => (
+                          <option key={variant} value={variant}>
+                            {variant}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </Field>
 
@@ -594,6 +636,12 @@ const controlStyle: React.CSSProperties = {
   borderRadius: 8,
   background: '#fff',
   fontSize: 14,
+};
+
+const readOnlyControlStyle: React.CSSProperties = {
+  ...controlStyle,
+  background: '#f8fafc',
+  color: '#64748b',
 };
 
 const primaryButtonStyle: React.CSSProperties = {
