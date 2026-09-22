@@ -1,5 +1,5 @@
 import { app } from '@wix/astro/builders';
-import myPage from './extensions/dashboard/pages/my-page/my-page.extension.ts';
+import inventory from './extensions/dashboard/pages/inventory/inventory.extension.ts';
 
 export default app()
-  .use(myPage)
+  .use(inventory)
